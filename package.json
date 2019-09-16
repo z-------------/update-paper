@@ -11,7 +11,7 @@
   "author": "Zack Guard <zacharyguard@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "needles": "^1.0.8",
+    "needle": "^2.4.0",
     "yargs": "^14.0.0"
   }
 }
