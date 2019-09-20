@@ -10,24 +10,24 @@ const argv = require("yargs")
   .version(false)
 
   .usage("Usage: $0 [options]")
-  .describe("r", "rename downloaded jar file")
+  .describe("r", "Rename downloaded jar file, replacing any existing unless -k")
   .alias("r", "replace")
   .boolean("r")
 
-  .describe("k", "keep most recent existing jar file with `.old.' infix")
+  .describe("k", "Keep most recent existing jar file with `.old.' infix")
   .alias("k", "keep")
   .boolean("k")
 
-  .describe("d", "only list updates without downloading")
+  .describe("d", "Only list updates without downloading")
   .alias("d", "dry")
   .boolean("d")
 
-  .describe("build", "specify a build number to download")
+  .describe("build", "Specify a build number to download")
 
-  .describe("R", "ignore state file")
+  .describe("R", "Ignore state file")
   .boolean("R")
 
-  .describe("v", "enable verbose output")
+  .describe("v", "Enable verbose output")
   .alias("v", "verbose")
   .boolean("v")
 
