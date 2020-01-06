@@ -142,7 +142,7 @@ if (!argv.R) {
   try {
     const vHistFileContents = fs.readFileSync(rel("version_history.json"), "utf-8");
     const versionInfo = JSON.parse(vHistFileContents).currentVersion;
-    
+
     const patApiVersion = /(?<=MC: )\d+\.\d+(\.\d+)?/;
     const patBuildNumber = /(?<=git-Paper-)\d+/;
 
@@ -208,7 +208,10 @@ function gotDownloadsList(json) {
           return true;
         });
 
-      if (!newerBuilds.length) return console.log(MSG_NO_NEW_VERSION);
+      if (!newerBuilds.length) {
+        console.log(MSG_NO_NEW_VERSION);
+        process.exit(2);
+      }
 
       print(`\n${repStr(" ", 5)}Paper ${matchingVersion}\n\n`);
       for (let build of newerBuilds) {
