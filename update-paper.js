@@ -121,8 +121,13 @@ const underline = function(text) {
   return text + "\n" + repStr("=", text.length);
 };
 
-const logVerbose = function() {
+const log = function() {
   if (argv.v) return console.log(...arguments);
+};
+
+const die = function(message, code = 1) {
+  console.error(message);
+  process.exit(code);
 };
 
 /* globals */
@@ -152,7 +157,7 @@ if (!argv.R) {
     if (matchApiVersion) state.apiVersion = matchApiVersion[0];
     if (matchBuildNumber) state.buildNumber = Number(matchBuildNumber[0]);
   } catch (e) {
-    console.log("Couldn't read version history file.");
+    console.error("Couldn't read version history file.");
   }
 }
 
@@ -193,7 +198,7 @@ function gotDownloadsList(json) {
     }
   }
 
-  if (!matchingVersion) return console.log(MSG_NO_NEW_VERSION);
+  if (!matchingVersion) die(MSG_NO_NEW_VERSION, 2);
 
   let major = semverGetMajor(matchingVersion);
   // get build numbers for matching version
@@ -208,10 +213,7 @@ function gotDownloadsList(json) {
           return true;
         });
 
-      if (!newerBuilds.length) {
-        console.log(MSG_NO_NEW_VERSION);
-        process.exit(2);
-      }
+      if (!newerBuilds.length) die(MSG_NO_NEW_VERSION, 2);
 
       print(`\n${repStr(" ", 5)}Paper ${matchingVersion}\n\n`);
       for (let build of newerBuilds) {
@@ -229,7 +231,7 @@ function gotDownloadsList(json) {
           .then(response => {
             const contentLength = Number(response.headers["content-length"]);
             let writeStream = fs.createWriteStream(rel(filenameTemp));
-            logVerbose(`Writing to ${filenameTemp}...`);
+            log(`Writing to ${filenameTemp}...`);
             readStream = needle.get(url);
             readStream.pipe(writeStream);
             readStream.on("data", () => {
@@ -243,49 +245,49 @@ function gotDownloadsList(json) {
                 if (argv.k) { // keep any old paper-xxx.jar with same build number
                   fs.rename(rel(filename), rel(`paper-${buildNumber}.old.jar`), err => {
                     if (err) {
-                      if (err.code === "ENOENT") logVerbose("No old numbered jar to rename. Continuing.");
-                      else return console.error(`Couldn't rename ${filename}.`, err);
+                      if (err.code === "ENOENT") log("No old numbered jar to rename. Continuing.");
+                      else die(`Couldn't rename ${filename}.`);
                     } else {
-                      logVerbose(`Renamed old numbered jar to paper-${buildNumber}.old.jar.`);
+                      log(`Renamed old numbered jar to paper-${buildNumber}.old.jar.`);
                     }
                   });
                 }
                 // rename to paper-xxx.jar, removing .temp suffix
                 fs.rename(rel(filenameTemp), rel(filename), err => {
                   if (err) {
-                    return console.error(`Couldn't rename ${filenameTemp}.`, err);
+                    die(`Couldn't rename ${filenameTemp}.`);
                   } else {
-                    logVerbose(`Renamed ${filenameTemp} to ${filename}.`);
+                    log(`Renamed ${filenameTemp} to ${filename}.`);
                   }
                 });
                 if (argv.r) { // rename to paper.jar
                   // move any existing paper.jar to paper.temp.jar
                   fs.rename(rel("paper.jar"), rel("paper.temp.jar"), err => {
                     if (err) {
-                      if (err.code === "ENOENT") logVerbose("No old jar to rename. Continuing.");
-                      else return console.error("Couldn't rename paper.jar.", err);
+                      if (err.code === "ENOENT") log("No old jar to rename. Continuing.");
+                      else die("Couldn't rename paper.jar.");
                     } else {
-                      logVerbose("Renamed old jar to paper.temp.jar.");
+                      log("Renamed old jar to paper.temp.jar.");
                     }
                     fs.rename(rel(filename), rel("paper.jar"), err => {
-                      if (err) return console.error(`Couldn't rename ${filename}.`);
-                      logVerbose("Renamed new jar.");
+                      if (err) die(`Couldn't rename ${filename}.`);
+                      log("Renamed new jar.");
                       if (argv.k) { // keep any old paper.jar (now renamed paper.temp.jar)
                         fs.rename(rel("paper.temp.jar"), rel("paper.old.jar"), err => {
                           if (err) {
-                            if (err.code === "ENOENT") logVerbose("No temp jar to rename. Continuing.");
-                            else return console.error("Couldn't rename paper.temp.jar.", err);
+                            if (err.code === "ENOENT") log("No temp jar to rename. Continuing.");
+                            else die("Couldn't rename paper.temp.jar.");
                           } else {
-                            logVerbose("Renamed temp jar to paper.old.jar.");
+                            log("Renamed temp jar to paper.old.jar.");
                           }
                         });
                       } else { // delete any old paper.jar (now renamed paper.temp.jar)
                         fs.unlink(rel("paper.temp.jar"), err => {
                           if (err) {
-                            if (err.code === "ENOENT") logVerbose("No temp jar to delete. Continuing.");
-                            else return console.error("Couldn't delete paper.temp.jar.", err);
+                            if (err.code === "ENOENT") log("No temp jar to delete. Continuing.");
+                            else die("Couldn't delete paper.temp.jar.");
                           } else {
-                            logVerbose("Deleted temp jar.");
+                            log("Deleted temp jar.");
                           }
                         });
                       }
@@ -295,7 +297,7 @@ function gotDownloadsList(json) {
               }
             });
           })
-          .catch(() => console.error(`Error downloading from ${url}.`));
+          .catch(() => die(`Error downloading from ${url}.`));
       }
     });
 }
@@ -304,11 +306,11 @@ process.on("SIGINT", () => {
   if (isDownloadInProgress) {
     isDownloadInProgress = false;
     readStream.destroy();
-    logVerbose("Destroyed stream.");
-    logVerbose("Deleting partially downloaded file...");
+    log("Destroyed stream.");
+    log("Deleting partially downloaded file...");
     fs.unlink(filenameTemp, err => {
-      if (err) console.error(`Failed to delete ${filenameTemp}.`);
-      else logVerbose(`Deleted ${filenameTemp}.`);
+      if (err) die(`Failed to delete ${filenameTemp}.`);
+      else log(`Deleted ${filenameTemp}.`);
       process.exit();
     });
   }
