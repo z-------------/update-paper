@@ -125,8 +125,18 @@ const underline = function(text) {
     return text + "\n" + repStr("=", text.length);
 };
 
+<<<<<<< HEAD
 const logVerbose = function() {
     if (argv.v) return console.log(...arguments);
+=======
+const log = function() {
+  if (argv.v) return console.log(...arguments);
+>>>>>>> 28ee4a2043359e986de7e93b0a65c23c7542ff78
+};
+
+const die = function(message, code = 1) {
+  console.error(message);
+  process.exit(code);
 };
 
 /* globals */
@@ -231,7 +241,7 @@ if (!argv.R) {
             const headResponse = await needle("head", url);
             const contentLength = Number(headResponse.headers["content-length"]);
             let writeStream = fs.createWriteStream(rel(filenameTemp));
-            logVerbose(`Writing to ${filenameTemp}...`);
+            log(`Writing to ${filenameTemp}...`);
             readStream = needle.get(url);
             readStream.pipe(writeStream);
             readStream.on("data", () => {
