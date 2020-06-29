@@ -130,8 +130,8 @@ const logVerbose = function() {
 };
 
 const die = function(message, code = 1) {
-  console.error(message);
-  process.exit(code);
+    console.error(message);
+    process.exit(code);
 };
 
 /* globals */
@@ -161,7 +161,7 @@ if (!argv.R) {
         if (matchApiVersion) state.apiVersion = matchApiVersion[0];
         if (matchBuildNumber) state.buildNumber = Number(matchBuildNumber[0]);
     } catch (e) {
-        console.log("Couldn't read version history file.");
+        console.error("Couldn't read version history file.");
     }
 }
 
@@ -202,7 +202,7 @@ if (!argv.R) {
         }
     }
 
-    if (!matchingVersion) return console.log(MSG_NO_NEW_VERSION);
+    if (!matchingVersion) return die(MSG_NO_NEW_VERSION, 2);
 
     let major = semverGetMajor(matchingVersion);
     // get build numbers for matching version
@@ -216,7 +216,7 @@ if (!argv.R) {
             return true;
         });
 
-    if (!newerBuilds.length) return console.log(MSG_NO_NEW_VERSION);
+    if (!newerBuilds.length) return die(MSG_NO_NEW_VERSION, 2);
 
     print(`\n${repStr(" ", 5)}Paper ${matchingVersion}\n\n`);
     for (let build of newerBuilds) {
@@ -236,7 +236,7 @@ if (!argv.R) {
             const headResponse = await needle("head", url);
             const contentLength = Number(headResponse.headers["content-length"]);
             let writeStream = fs.createWriteStream(rel(filenameTemp));
-            log(`Writing to ${filenameTemp}...`);
+            logVerbose(`Writing to ${filenameTemp}...`);
             readStream = needle.get(url);
             readStream.pipe(writeStream);
             readStream.on("data", () => {
@@ -255,13 +255,13 @@ if (!argv.R) {
                         logVerbose(`Renamed old numbered jar to paper-${buildNumber}.old.jar.`);
                     } catch (err) {
                         if (err.code === "ENOENT") logVerbose("No old numbered jar to rename. Continuing.");
-                        else return console.error(`Couldn't rename ${filename}.`, err);
+                        else return die(`Couldn't rename ${filename}.`);
                     }
                 }
                 // rename to paper-xxx.jar, removing .temp suffix
                 fs.rename(rel(filenameTemp), rel(filename), err => {
                     if (err) {
-                        return console.error(`Couldn't rename ${filenameTemp}.`, err);
+                        return die(`Couldn't rename ${filenameTemp}.`);
                     } else {
                         logVerbose(`Renamed ${filenameTemp} to ${filename}.`);
                     }
@@ -272,14 +272,14 @@ if (!argv.R) {
                         await renameOptional(rel("paper.jar"), rel("paper.temp.jar"));
                         logVerbose("Renamed old jar (if it exists) to paper.temp.jar.");
                     } catch (err) {
-                        return console.error("Couldn't rename paper.jar.", err);
+                        return die("Couldn't rename paper.jar.");
                     }
 
                     try {
                         await fsp.rename(rel(filename), rel("paper.jar"));
                         logVerbose("Renamed new jar.");
                     } catch (err) {
-                        return console.error(`Couldn't rename ${filename}.`);
+                        return die(`Couldn't rename ${filename}.`);
                     }
 
                     if (argv.k) { // keep any old paper.jar (now renamed paper.temp.jar)
@@ -287,20 +287,20 @@ if (!argv.R) {
                             await renameOptional(rel("paper.temp.jar"), rel("paper.old.jar"));
                             logVerbose("Renamed temp jar (if it exists) to paper.old.jar.");
                         } catch (err) {
-                            return console.error("Couldn't rename paper.temp.jar.", err);
+                            return die("Couldn't rename paper.temp.jar.");
                         }
                     } else { // delete any old paper.jar (now renamed paper.temp.jar)
                         try {
                             await unlinkOptional(rel("paper.temp.jar"));
                             logVerbose("Deleted temp jar (if it exists).");
                         } catch (err) {
-                            return console.error("Couldn't delete paper.temp.jar.", err);
+                            return die("Couldn't delete paper.temp.jar.");
                         }
                     }
                 }
             });
         } catch (e) {
-            console.error(`Error downloading from ${url}.`);
+            return die(`Error downloading from ${url}.`);
         }
     }
 })();
@@ -315,7 +315,7 @@ process.on("SIGINT", async () => {
             await fsp.unlink(filenameTemp);
             logVerbose(`Deleted ${filenameTemp}.`);
         } catch (e) {
-            console.error(`Failed to delete ${filenameTemp}.`)
+            return die(`Failed to delete ${filenameTemp}.`)
         }
         process.exit();
     }
