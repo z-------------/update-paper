@@ -258,14 +258,15 @@ if (!argv.R) {
                         else return die(`Couldn't rename ${filename}.`);
                     }
                 }
+                
                 // rename to paper-xxx.jar, removing .temp suffix
-                fs.rename(rel(filenameTemp), rel(filename), err => {
-                    if (err) {
-                        return die(`Couldn't rename ${filenameTemp}.`);
-                    } else {
-                        logVerbose(`Renamed ${filenameTemp} to ${filename}.`);
-                    }
-                });
+                try {
+                    await fsp.rename(rel(filenameTemp), rel(filename));
+                    logVerbose(`Renamed ${filenameTemp} to ${filename}.`);
+                } catch (e) {
+                    return die(`Couldn't rename ${filenameTemp}.`);
+                }
+
                 if (argv.r) { // rename to paper.jar
                     // move any existing paper.jar to paper.temp.jar
                     try {
