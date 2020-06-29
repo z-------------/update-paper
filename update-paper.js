@@ -3,6 +3,10 @@
 const fs = require("fs");
 const path = require("path");
 const needle = require("needle");
+const renameOptional = require("./lib/renameOptional");
+const unlinkOptional = require("./lib/unlinkOptional");
+
+const fsp = fs.promises;
 
 /* set up yargs */
 
@@ -158,31 +162,31 @@ if (!argv.R) {
 
 /* hey ho */
 
-needle("get", "https://papermc.io/js/downloads.js")
-  .then(response => {
-    let openCount = 0, closeCount = 0;
-    let startIndex = -1, endIndex = -1;
-    const body = response.body.toString();
-    const chars = body.split("");
-    for (let i = 0; i < chars.length; ++i) {
-      const char = chars[i];
-      if (char === "{") {
-        ++openCount;
-        if (startIndex === -1) startIndex = i;
-      }
-      else if (char === "}") ++closeCount;
-      if (openCount > 1 && openCount == closeCount) {
-        endIndex = i + 1;
-        const sub = body.substring(startIndex, endIndex)
-          .replace(/\/\/.*/g, "")
-          .replace(/,\s*(?=})/g, "");
-        const json = JSON.parse(sub);
-        return gotDownloadsList(json);
-      }
-    }
-  });
+(async () => {
+  let json;
 
-function gotDownloadsList(json) {
+  const downloadsResponse = await needle("get", "https://papermc.io/js/downloads.js");
+  let openCount = 0, closeCount = 0;
+  let startIndex = -1, endIndex = -1;
+  const body = downloadsResponse.body.toString();
+  const chars = body.split("");
+  for (let i = 0; i < chars.length; ++i) {
+    const char = chars[i];
+    if (char === "{") {
+      ++openCount;
+      if (startIndex === -1) startIndex = i;
+    }
+    else if (char === "}") ++closeCount;
+    if (openCount > 1 && openCount == closeCount) {
+      endIndex = i + 1;
+      const sub = body.substring(startIndex, endIndex)
+        .replace(/\/\/.*/g, "")
+        .replace(/,\s*(?=})/g, "");
+      json = JSON.parse(sub);
+      break;
+    }
+  }
+
   // find matching version
   let matchingVersion;
   for (let key in json) {
@@ -197,116 +201,117 @@ function gotDownloadsList(json) {
 
   let major = semverGetMajor(matchingVersion);
   // get build numbers for matching version
-  needle("get", `https://papermc.io/ci/job/Paper-${major}/api/json?tree=builds[number,timestamp,changeSet[items[comment,commitId,msg]]]`, { json: true })
-    .then(response => {
-      let newerBuilds = response.body.builds
-        .filter(build => buildNumberGT(build.number))
-        .filter(build => {
-          for (let commit of build.changeSet.items) {
-            if (commit.comment.indexOf("[CI-SKIP]") !== -1) return false;
-          }
-          return true;
-        });
-
-      if (!newerBuilds.length) return console.log(MSG_NO_NEW_VERSION);
-
-      print(`\n${repStr(" ", 5)}Paper ${matchingVersion}\n\n`);
-      for (let build of newerBuilds) {
-        const formatted = formatBuildInfo(build);
-        if (formatted.trim().length) print(formatted + "\n");
+  const buildsResponse = await needle("get", `https://papermc.io/ci/job/Paper-${major}/api/json?tree=builds[number,timestamp,changeSet[items[comment,commitId,msg]]]`, { json: true });
+  let newerBuilds = buildsResponse.body.builds
+    .filter(build => buildNumberGT(build.number))
+    .filter(build => {
+      for (let commit of build.changeSet.items) {
+        if (commit.comment.indexOf("[CI-SKIP]") !== -1) return false;
       }
-      if (!argv.d) {
-        buildNumber = argv.build || newerBuilds[0].number;
-        const url = `https://papermc.io/api/v1/paper/${matchingVersion}/${buildNumber}/download`;
-        filename = `paper-${buildNumber}.jar`;
-        filenameTemp = filename + ".temp";
-        // start downloading jar
-        print(`Downloading ${matchingVersion} #${pad(buildNumber, 3)}...\n`);
-        needle("head", url)
-          .then(response => {
-            const contentLength = Number(response.headers["content-length"]);
-            let writeStream = fs.createWriteStream(rel(filenameTemp));
-            logVerbose(`Writing to ${filenameTemp}...`);
-            readStream = needle.get(url);
-            readStream.pipe(writeStream);
-            readStream.on("data", () => {
-              isDownloadInProgress = true;
-              process.stdout.write("\r" + progressBar(writeStream.bytesWritten / contentLength, null, null, process.stdout.columns));
-            });
-            readStream.on("end", () => {
-              if (isDownloadInProgress) {
-                isDownloadInProgress = false;
-                print("\nDownload complete.\n");
-                if (argv.k) { // keep any old paper-xxx.jar with same build number
-                  fs.rename(rel(filename), rel(`paper-${buildNumber}.old.jar`), err => {
-                    if (err) {
-                      if (err.code === "ENOENT") logVerbose("No old numbered jar to rename. Continuing.");
-                      else return console.error(`Couldn't rename ${filename}.`, err);
-                    } else {
-                      logVerbose(`Renamed old numbered jar to paper-${buildNumber}.old.jar.`);
-                    }
-                  });
-                }
-                // rename to paper-xxx.jar, removing .temp suffix
-                fs.rename(rel(filenameTemp), rel(filename), err => {
-                  if (err) {
-                    return console.error(`Couldn't rename ${filenameTemp}.`, err);
-                  } else {
-                    logVerbose(`Renamed ${filenameTemp} to ${filename}.`);
-                  }
-                });
-                if (argv.r) { // rename to paper.jar
-                  // move any existing paper.jar to paper.temp.jar
-                  fs.rename(rel("paper.jar"), rel("paper.temp.jar"), err => {
-                    if (err) {
-                      if (err.code === "ENOENT") logVerbose("No old jar to rename. Continuing.");
-                      else return console.error("Couldn't rename paper.jar.", err);
-                    } else {
-                      logVerbose("Renamed old jar to paper.temp.jar.");
-                    }
-                    fs.rename(rel(filename), rel("paper.jar"), err => {
-                      if (err) return console.error(`Couldn't rename ${filename}.`);
-                      logVerbose("Renamed new jar.");
-                      if (argv.k) { // keep any old paper.jar (now renamed paper.temp.jar)
-                        fs.rename(rel("paper.temp.jar"), rel("paper.old.jar"), err => {
-                          if (err) {
-                            if (err.code === "ENOENT") logVerbose("No temp jar to rename. Continuing.");
-                            else return console.error("Couldn't rename paper.temp.jar.", err);
-                          } else {
-                            logVerbose("Renamed temp jar to paper.old.jar.");
-                          }
-                        });
-                      } else { // delete any old paper.jar (now renamed paper.temp.jar)
-                        fs.unlink(rel("paper.temp.jar"), err => {
-                          if (err) {
-                            if (err.code === "ENOENT") logVerbose("No temp jar to delete. Continuing.");
-                            else return console.error("Couldn't delete paper.temp.jar.", err);
-                          } else {
-                            logVerbose("Deleted temp jar.");
-                          }
-                        });
-                      }
-                    });
-                  });
-                }
-              }
-            });
-          })
-          .catch(() => console.error(`Error downloading from ${url}.`));
-      }
+      return true;
     });
-}
 
-process.on("SIGINT", () => {
+  if (!newerBuilds.length) return console.log(MSG_NO_NEW_VERSION);
+
+  print(`\n${repStr(" ", 5)}Paper ${matchingVersion}\n\n`);
+  for (let build of newerBuilds) {
+    const formatted = formatBuildInfo(build);
+    if (formatted.trim().length) print(formatted + "\n");
+  }
+
+  if (!argv.d) {
+    buildNumber = argv.build || newerBuilds[0].number;
+    const url = `https://papermc.io/api/v1/paper/${matchingVersion}/${buildNumber}/download`;
+    filename = `paper-${buildNumber}.jar`;
+    filenameTemp = filename + ".temp";
+
+    // start downloading jar
+    print(`Downloading ${matchingVersion} #${pad(buildNumber, 3)}...\n`);
+    try {
+      const headResponse = await needle("head", url);
+      const contentLength = Number(headResponse.headers["content-length"]);
+      let writeStream = fs.createWriteStream(rel(filenameTemp));
+      logVerbose(`Writing to ${filenameTemp}...`);
+      readStream = needle.get(url);
+      readStream.pipe(writeStream);
+      readStream.on("data", () => {
+        isDownloadInProgress = true;
+        process.stdout.write("\r" + progressBar(writeStream.bytesWritten / contentLength, null, null, process.stdout.columns));
+      });
+      readStream.on("end", async () => {
+        if (!isDownloadInProgress) return;
+
+        isDownloadInProgress = false;
+        print("\nDownload complete.\n");
+        
+        if (argv.k) { // keep any old paper-xxx.jar with same build number
+          try {
+            await fsp.rename(rel(filename), rel(`paper-${buildNumber}.old.jar`));
+            logVerbose(`Renamed old numbered jar to paper-${buildNumber}.old.jar.`);
+          } catch (err) {
+            if (err.code === "ENOENT") logVerbose("No old numbered jar to rename. Continuing.");
+            else return console.error(`Couldn't rename ${filename}.`, err);
+          }
+        }
+        // rename to paper-xxx.jar, removing .temp suffix
+        fs.rename(rel(filenameTemp), rel(filename), err => {
+          if (err) {
+            return console.error(`Couldn't rename ${filenameTemp}.`, err);
+          } else {
+            logVerbose(`Renamed ${filenameTemp} to ${filename}.`);
+          }
+        });
+        if (argv.r) { // rename to paper.jar
+          // move any existing paper.jar to paper.temp.jar
+          try {
+            await renameOptional(rel("paper.jar"), rel("paper.temp.jar"));
+            logVerbose("Renamed old jar (if it exists) to paper.temp.jar.");
+          } catch (err) {
+            return console.error("Couldn't rename paper.jar.", err);
+          }
+
+          try {
+            await fsp.rename(rel(filename), rel("paper.jar"));
+            logVerbose("Renamed new jar.");
+          } catch (err) {
+            return console.error(`Couldn't rename ${filename}.`);
+          }
+
+          if (argv.k) { // keep any old paper.jar (now renamed paper.temp.jar)
+            try {
+              await renameOptional(rel("paper.temp.jar"), rel("paper.old.jar"));
+              logVerbose("Renamed temp jar (if it exists) to paper.old.jar.");
+            } catch (err) {
+              return console.error("Couldn't rename paper.temp.jar.", err);
+            }
+          } else { // delete any old paper.jar (now renamed paper.temp.jar)
+            try {
+              await unlinkOptional(rel("paper.temp.jar"));
+              logVerbose("Deleted temp jar (if it exists).");
+            } catch (err) {
+              return console.error("Couldn't delete paper.temp.jar.", err);
+            }
+          }
+        }
+      });
+    } catch (e) {
+      console.error(`Error downloading from ${url}.`);
+    }
+  }
+})();
+
+process.on("SIGINT", async () => {
   if (isDownloadInProgress) {
     isDownloadInProgress = false;
     readStream.destroy();
     logVerbose("Destroyed stream.");
     logVerbose("Deleting partially downloaded file...");
-    fs.unlink(filenameTemp, err => {
-      if (err) console.error(`Failed to delete ${filenameTemp}.`);
-      else logVerbose(`Deleted ${filenameTemp}.`);
-      process.exit();
-    });
+    try {
+      await fsp.unlink(filenameTemp);
+      logVerbose(`Deleted ${filenameTemp}.`);
+    } catch (e) {
+      console.error(`Failed to delete ${filenameTemp}.`)
+    }
+    process.exit();
   }
 });
