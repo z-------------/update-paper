@@ -1,6 +1,6 @@
 {
   "name": "update-paper",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Update Paper.",
   "main": "update-paper.js",
   "preferGlobal": true,
