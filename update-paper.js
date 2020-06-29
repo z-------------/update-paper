@@ -125,13 +125,8 @@ const underline = function(text) {
     return text + "\n" + repStr("=", text.length);
 };
 
-<<<<<<< HEAD
 const logVerbose = function() {
     if (argv.v) return console.log(...arguments);
-=======
-const log = function() {
-  if (argv.v) return console.log(...arguments);
->>>>>>> 28ee4a2043359e986de7e93b0a65c23c7542ff78
 };
 
 const die = function(message, code = 1) {
