@@ -224,85 +224,85 @@ if (!argv.R) {
         if (formatted.trim().length) print(formatted + "\n");
     }
 
-    if (!argv.d) {
-        buildNumber = argv.build || newerBuilds[0].number;
-        const url = `https://papermc.io/api/v1/paper/${matchingVersion}/${buildNumber}/download`;
-        filename = `paper-${buildNumber}.jar`;
-        filenameTemp = filename + ".temp";
+    if (argv.d) return; // stop here if dry-run
 
-        // start downloading jar
-        print(`Downloading ${matchingVersion} #${pad(buildNumber, 3)}...\n`);
-        try {
-            const headResponse = await needle("head", url);
-            const contentLength = Number(headResponse.headers["content-length"]);
-            let writeStream = fs.createWriteStream(rel(filenameTemp));
-            logVerbose(`Writing to ${filenameTemp}...`);
-            readStream = needle.get(url);
-            readStream.pipe(writeStream);
-            readStream.on("data", () => {
-                isDownloadInProgress = true;
-                process.stdout.write("\r" + progressBar(writeStream.bytesWritten / contentLength, null, null, process.stdout.columns));
-            });
-            readStream.on("end", async () => {
-                if (!isDownloadInProgress) return;
+    buildNumber = argv.build || newerBuilds[0].number;
+    const url = `https://papermc.io/api/v1/paper/${matchingVersion}/${buildNumber}/download`;
+    filename = `paper-${buildNumber}.jar`;
+    filenameTemp = filename + ".temp";
 
-                isDownloadInProgress = false;
-                print("\nDownload complete.\n");
-                
-                if (argv.k) { // keep any old paper-xxx.jar with same build number
-                    try {
-                        await fsp.rename(rel(filename), rel(`paper-${buildNumber}.old.jar`));
-                        logVerbose(`Renamed old numbered jar to paper-${buildNumber}.old.jar.`);
-                    } catch (err) {
-                        if (err.code === "ENOENT") logVerbose("No old numbered jar to rename. Continuing.");
-                        else return die(`Couldn't rename ${filename}.`);
-                    }
-                }
-                
-                // rename to paper-xxx.jar, removing .temp suffix
+    // start downloading jar
+    print(`Downloading ${matchingVersion} #${pad(buildNumber, 3)}...\n`);
+    try {
+        const headResponse = await needle("head", url);
+        const contentLength = Number(headResponse.headers["content-length"]);
+        let writeStream = fs.createWriteStream(rel(filenameTemp));
+        logVerbose(`Writing to ${filenameTemp}...`);
+        readStream = needle.get(url);
+        readStream.pipe(writeStream);
+        readStream.on("data", () => {
+            isDownloadInProgress = true;
+            process.stdout.write("\r" + progressBar(writeStream.bytesWritten / contentLength, null, null, process.stdout.columns));
+        });
+        readStream.on("end", async () => {
+            if (!isDownloadInProgress) return;
+
+            isDownloadInProgress = false;
+            print("\nDownload complete.\n");
+            
+            if (argv.k) { // keep any old paper-xxx.jar with same build number
                 try {
-                    await fsp.rename(rel(filenameTemp), rel(filename));
-                    logVerbose(`Renamed ${filenameTemp} to ${filename}.`);
-                } catch (e) {
-                    return die(`Couldn't rename ${filenameTemp}.`);
+                    await fsp.rename(rel(filename), rel(`paper-${buildNumber}.old.jar`));
+                    logVerbose(`Renamed old numbered jar to paper-${buildNumber}.old.jar.`);
+                } catch (err) {
+                    if (err.code === "ENOENT") logVerbose("No old numbered jar to rename. Continuing.");
+                    else return die(`Couldn't rename ${filename}.`);
+                }
+            }
+            
+            // rename to paper-xxx.jar, removing .temp suffix
+            try {
+                await fsp.rename(rel(filenameTemp), rel(filename));
+                logVerbose(`Renamed ${filenameTemp} to ${filename}.`);
+            } catch (e) {
+                return die(`Couldn't rename ${filenameTemp}.`);
+            }
+
+            if (argv.r) { // rename to paper.jar
+                // move any existing paper.jar to paper.temp.jar
+                try {
+                    await renameOptional(rel("paper.jar"), rel("paper.temp.jar"));
+                    logVerbose("Renamed old jar (if it exists) to paper.temp.jar.");
+                } catch (err) {
+                    return die("Couldn't rename paper.jar.");
                 }
 
-                if (argv.r) { // rename to paper.jar
-                    // move any existing paper.jar to paper.temp.jar
-                    try {
-                        await renameOptional(rel("paper.jar"), rel("paper.temp.jar"));
-                        logVerbose("Renamed old jar (if it exists) to paper.temp.jar.");
-                    } catch (err) {
-                        return die("Couldn't rename paper.jar.");
-                    }
+                try {
+                    await fsp.rename(rel(filename), rel("paper.jar"));
+                    logVerbose("Renamed new jar.");
+                } catch (err) {
+                    return die(`Couldn't rename ${filename}.`);
+                }
 
+                if (argv.k) { // keep any old paper.jar (now renamed paper.temp.jar)
                     try {
-                        await fsp.rename(rel(filename), rel("paper.jar"));
-                        logVerbose("Renamed new jar.");
+                        await renameOptional(rel("paper.temp.jar"), rel("paper.old.jar"));
+                        logVerbose("Renamed temp jar (if it exists) to paper.old.jar.");
                     } catch (err) {
-                        return die(`Couldn't rename ${filename}.`);
+                        return die("Couldn't rename paper.temp.jar.");
                     }
-
-                    if (argv.k) { // keep any old paper.jar (now renamed paper.temp.jar)
-                        try {
-                            await renameOptional(rel("paper.temp.jar"), rel("paper.old.jar"));
-                            logVerbose("Renamed temp jar (if it exists) to paper.old.jar.");
-                        } catch (err) {
-                            return die("Couldn't rename paper.temp.jar.");
-                        }
-                    } else { // delete any old paper.jar (now renamed paper.temp.jar)
-                        try {
-                            await unlinkOptional(rel("paper.temp.jar"));
-                            logVerbose("Deleted temp jar (if it exists).");
-                        } catch (err) {
-                            return die("Couldn't delete paper.temp.jar.");
-                        }
+                } else { // delete any old paper.jar (now renamed paper.temp.jar)
+                    try {
+                        await unlinkOptional(rel("paper.temp.jar"));
+                        logVerbose("Deleted temp jar (if it exists).");
+                    } catch (err) {
+                        return die("Couldn't delete paper.temp.jar.");
                     }
                 }
-            });
-        } catch (e) {
-            return die(`Error downloading from ${url}.`);
-        }
+            }
+        });
+    } catch (e) {
+        return die(`Error downloading from ${url}.`);
     }
 })();
 
